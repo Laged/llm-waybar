@@ -659,6 +659,7 @@ dependencies = [
  "llm-bridge-claude",
  "llm-bridge-core",
  "notify",
+ "serde_json",
  "tokio",
 ]
 

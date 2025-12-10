@@ -1,6 +1,12 @@
-[package]
-name = "llm-waybar"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "crates/llm-bridge-core",
+    "crates/llm-bridge-claude",
+    "crates/waybar-llm-bridge",
+]
 
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"

@@ -1,0 +1,15 @@
+[package]
+name = "waybar-llm-bridge"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "waybar-llm-bridge"
+path = "src/main.rs"
+
+[dependencies]
+llm-bridge-core = { path = "../llm-bridge-core" }
+llm-bridge-claude = { path = "../llm-bridge-claude" }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }
+notify = "7.0"

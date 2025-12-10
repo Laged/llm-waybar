@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use llm_bridge_core::{Config, WaybarState, AgentPhase, signal::signal_waybar};
 use llm_bridge_claude::ClaudeProvider;
 use llm_bridge_core::LlmProvider;
+use notify::{Watcher, RecursiveMode, Event, EventKind};
+use std::sync::mpsc::channel;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "waybar-llm-bridge")]
@@ -131,11 +134,45 @@ fn handle_status(state_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>>
 }
 
 fn handle_daemon(
-    _log_path: &PathBuf,
-    _state_path: &PathBuf,
-    _signal: u8,
+    log_path: &PathBuf,
+    state_path: &PathBuf,
+    signal: u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Implement file watcher with notify crate
-    eprintln!("Daemon mode not yet implemented");
+    let (tx, rx) = channel();
+
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
+        if let Ok(event) = res {
+            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                let _ = tx.send(());
+            }
+        }
+    })?;
+
+    watcher.watch(log_path, RecursiveMode::NonRecursive)?;
+
+    eprintln!("Watching {} for changes...", log_path.display());
+
+    let provider = ClaudeProvider::new();
+
+    loop {
+        match rx.recv_timeout(Duration::from_secs(60)) {
+            Ok(()) => {
+                if let Ok(usage) = provider.parse_usage(log_path) {
+                    let mut state = WaybarState::read_from(state_path).unwrap_or_default();
+                    state.tooltip = format!(
+                        "Tokens: {} in / {} out\nCost: ${:.4}",
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        usage.estimated_cost
+                    );
+                    let _ = state.write_atomic(state_path);
+                    let _ = signal_waybar(signal);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
     Ok(())
 }

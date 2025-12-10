@@ -43,18 +43,31 @@
       packages = forAllSystems (system:
         let pkgs = mkPkgs system;
         in {
-          hello = pkgs.writeShellScriptBin "hello" ''
-            echo "Hello from llm-waybar!"
-          '';
-          default = self.packages.${system}.hello;
+          waybar-llm-bridge = pkgs.rustPlatform.buildRustPackage {
+            pname = "waybar-llm-bridge";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+
+            postInstall = ''
+              wrapProgram $out/bin/waybar-llm-bridge \
+                --run 'export LLM_BRIDGE_STATE_PATH=''${LLM_BRIDGE_STATE_PATH:-"/run/user/$(id -u)/llm_state.json"}' \
+                --run 'export LLM_BRIDGE_SIGNAL=''${LLM_BRIDGE_SIGNAL:-"8"}' \
+                --run 'export LLM_BRIDGE_TRANSCRIPT_DIR=''${LLM_BRIDGE_TRANSCRIPT_DIR:-"$HOME/.claude/projects"}'
+            '';
+          };
+
+          default = self.packages.${system}.waybar-llm-bridge;
         });
 
       apps = forAllSystems (system: {
-        hello = {
+        waybar-llm-bridge = {
           type = "app";
-          program = "${self.packages.${system}.hello}/bin/hello";
+          program = "${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge";
         };
-        default = self.apps.${system}.hello;
+        default = self.apps.${system}.waybar-llm-bridge;
       });
     };
 }

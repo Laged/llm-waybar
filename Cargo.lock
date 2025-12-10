@@ -656,9 +656,11 @@ name = "waybar-llm-bridge"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dirs",
  "llm-bridge-claude",
  "llm-bridge-core",
  "notify",
+ "serde",
  "serde_json",
  "tokio",
 ]

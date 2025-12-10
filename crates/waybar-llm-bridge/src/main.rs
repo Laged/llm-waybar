@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Deserialize;
+use std::io::{self, BufRead, IsTerminal};
 use std::path::PathBuf;
 use llm_bridge_core::{Config, WaybarState, AgentPhase, signal::signal_waybar};
 use llm_bridge_claude::ClaudeProvider;
@@ -44,6 +46,14 @@ enum Commands {
         #[arg(long)]
         log_path: PathBuf,
     },
+    /// Claude Code statusLine mode - reads JSON from stdin, outputs status line
+    Statusline,
+    /// Install hooks into ~/.claude/settings.json
+    InstallHooks {
+        /// Print what would be done without modifying the file
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -52,6 +62,28 @@ enum EventType {
     ToolStart,
     ToolEnd,
     Stop,
+}
+
+/// JSON input from Claude Code's statusLine hook
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct StatuslineInput {
+    session_id: Option<String>,
+    transcript_path: Option<String>,
+    cwd: Option<String>,
+    model: Option<ModelInfo>,
+    cost: Option<CostInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelInfo {
+    id: Option<String>,
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CostInfo {
+    total_cost_usd: Option<f64>,
 }
 
 fn main() {
@@ -71,6 +103,12 @@ fn main() {
         }
         Commands::Daemon { log_path } => {
             handle_daemon(&log_path, &state_path, cli.signal)
+        }
+        Commands::Statusline => {
+            handle_statusline(&state_path, cli.signal)
+        }
+        Commands::InstallHooks { dry_run } => {
+            handle_install_hooks(dry_run)
         }
     };
 
@@ -172,6 +210,176 @@ fn handle_daemon(
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
+    }
+
+    Ok(())
+}
+
+fn handle_statusline(
+    state_path: &PathBuf,
+    signal: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = io::stdin();
+
+    // Check if stdin is a TTY (no piped input)
+    if stdin.is_terminal() {
+        eprintln!("Error: statusline expects JSON input piped from Claude Code's statusLine hook.");
+        eprintln!("This command is not meant to be run directly.");
+        eprintln!();
+        eprintln!("To install the statusLine hook, run:");
+        eprintln!("  waybar-llm-bridge install-hooks");
+        return Err("No input provided".into());
+    }
+
+    // Read JSON from stdin (Claude Code pipes this)
+    let mut input = String::new();
+    for line in stdin.lock().lines() {
+        input.push_str(&line?);
+    }
+
+    // Parse the statusline input
+    let status_input: StatuslineInput = serde_json::from_str(&input).unwrap_or(StatuslineInput {
+        session_id: None,
+        transcript_path: None,
+        cwd: None,
+        model: None,
+        cost: None,
+    });
+
+    // Build status line output
+    let model_name = status_input
+        .model
+        .as_ref()
+        .and_then(|m| m.display_name.as_ref().or(m.id.as_ref()))
+        .map(|s| s.as_str())
+        .unwrap_or("Claude");
+
+    let cost = status_input
+        .cost
+        .as_ref()
+        .and_then(|c| c.total_cost_usd)
+        .unwrap_or(0.0);
+
+    // Output a single status line (for Claude Code's statusLine display)
+    let status_line = format!("{} | ${:.2}", model_name, cost);
+    println!("{}", status_line);
+
+    // Also update waybar state file and signal
+    let mut state = WaybarState::read_from(state_path).unwrap_or_default();
+    state.text = model_name.to_string();
+    state.tooltip = format!("Session cost: ${:.4}", cost);
+    state.class = "active".to_string();
+    state.write_atomic(state_path)?;
+    let _ = signal_waybar(signal);
+
+    Ok(())
+}
+
+fn handle_install_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let settings_path = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".claude/settings.json");
+
+    // Read existing settings or start with empty object
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Get the binary path (use current exe or fallback to command name)
+    let bin_path = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "waybar-llm-bridge".to_string());
+
+    // Define our hooks
+    let our_hooks = serde_json::json!({
+        "UserPromptSubmit": [{
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": format!("{} event --type submit", bin_path)
+            }]
+        }],
+        "PreToolUse": [{
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": format!("{} event --type tool-start --tool \"$CLAUDE_TOOL_NAME\"", bin_path)
+            }]
+        }],
+        "PostToolUse": [{
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": format!("{} event --type tool-end", bin_path)
+            }]
+        }],
+        "Stop": [{
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": format!("{} event --type stop", bin_path)
+            }]
+        }]
+    });
+
+    // Merge hooks into settings
+    let hooks = settings
+        .as_object_mut()
+        .ok_or("Settings is not an object")?
+        .entry("hooks")
+        .or_insert(serde_json::json!({}));
+
+    if let Some(hooks_obj) = hooks.as_object_mut() {
+        for (event, hook_array) in our_hooks.as_object().unwrap() {
+            let existing = hooks_obj.entry(event).or_insert(serde_json::json!([]));
+            if let Some(existing_arr) = existing.as_array_mut() {
+                if let Some(new_hooks) = hook_array.as_array() {
+                    for hook in new_hooks {
+                        // Check if this hook already exists (by command prefix)
+                        let already_exists = existing_arr.iter().any(|h| {
+                            h.get("hooks")
+                                .and_then(|arr| arr.as_array())
+                                .map(|arr| arr.iter().any(|cmd| {
+                                    cmd.get("command")
+                                        .and_then(|c| c.as_str())
+                                        .map(|s| s.contains("waybar-llm-bridge"))
+                                        .unwrap_or(false)
+                                }))
+                                .unwrap_or(false)
+                        });
+                        if !already_exists {
+                            existing_arr.push(hook.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also add statusLine config
+    let settings_obj = settings.as_object_mut().ok_or("Settings is not an object")?;
+    if !settings_obj.contains_key("statusLine") {
+        settings_obj.insert("statusLine".to_string(), serde_json::json!({
+            "type": "command",
+            "command": format!("{} statusline", bin_path),
+            "padding": 0
+        }));
+    }
+
+    let output = serde_json::to_string_pretty(&settings)?;
+
+    if dry_run {
+        println!("Would write to {}:\n{}", settings_path.display(), output);
+    } else {
+        // Create parent directory if needed
+        if let Some(parent) = settings_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&settings_path, output)?;
+        println!("Hooks installed to {}", settings_path.display());
     }
 
     Ok(())

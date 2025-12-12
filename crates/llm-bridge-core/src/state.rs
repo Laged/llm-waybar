@@ -24,6 +24,10 @@ pub struct WaybarState {
     pub cache_write: u64,        // Set by statusline (if available)
     #[serde(default)]
     pub last_activity_time: i64, // Unix timestamp of last activity update
+    #[serde(default)]
+    pub session_id: String,          // Claude session ID
+    #[serde(default)]
+    pub cwd: String,                 // Working directory
 
     // Computed from above based on format string
     #[serde(default)]
@@ -49,6 +53,8 @@ impl Default for WaybarState {
             cache_read: 0,
             cache_write: 0,
             last_activity_time: 0,
+            session_id: String::new(),
+            cwd: String::new(),
             text: "Idle".to_string(),
             tooltip: String::new(),
             class: "idle".to_string(),
@@ -536,5 +542,12 @@ mod tests {
         assert_eq!(state.cache_write, 100);
         assert_eq!(state.cost, 0.25);
         assert!(state.tooltip.contains("Tokens: 1000 in / 500 out"));
+    }
+
+    #[test]
+    fn test_session_state_has_metadata() {
+        let state = WaybarState::default();
+        assert_eq!(state.session_id, "");
+        assert_eq!(state.cwd, "");
     }
 }

@@ -50,8 +50,17 @@ enum Commands {
     Status,
     /// Watch transcript and auto-update (daemon mode)
     Daemon {
+        /// Watch transcript file for changes
         #[arg(long)]
-        log_path: PathBuf,
+        log_path: Option<PathBuf>,
+
+        /// Aggregate mode: watch sessions directory instead
+        #[arg(long)]
+        aggregate: bool,
+
+        /// Sessions directory (for aggregate mode)
+        #[arg(long)]
+        sessions_dir: Option<PathBuf>,
     },
     /// Claude Code statusLine mode - reads JSON from stdin, outputs status line
     Statusline,
@@ -109,8 +118,15 @@ fn main() {
         Commands::Status => {
             handle_status(&state_path)
         }
-        Commands::Daemon { log_path } => {
-            handle_daemon(&log_path, &state_path, cli.signal)
+        Commands::Daemon { log_path, aggregate, sessions_dir } => {
+            if aggregate {
+                let sessions = sessions_dir.unwrap_or(config.sessions_dir);
+                handle_daemon_aggregate(&sessions, &state_path, cli.signal)
+            } else if let Some(log) = log_path {
+                handle_daemon(&log, &state_path, cli.signal)
+            } else {
+                Err("Either --log-path or --aggregate is required".into())
+            }
         }
         Commands::Statusline => {
             handle_statusline(&state_path, &config.sessions_dir, cli.signal, &format)
@@ -371,6 +387,22 @@ fn handle_statusline(
     let _ = signal_waybar(signal);
 
     Ok(())
+}
+
+fn handle_daemon_aggregate(
+    sessions_dir: &PathBuf,
+    state_path: &PathBuf,
+    signal: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use aggregator::SessionAggregator;
+
+    let aggregator = SessionAggregator::new(
+        sessions_dir.clone(),
+        state_path.clone(),
+        signal,
+    );
+
+    aggregator.watch()
 }
 
 fn handle_install_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {

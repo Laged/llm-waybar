@@ -36,6 +36,8 @@ enum Commands {
         tool: Option<String>,
         #[arg(long)]
         payload: Option<String>,
+        #[arg(long)]
+        session_id: Option<String>,
     },
     /// Sync usage metrics from transcript logs
     SyncUsage {
@@ -96,8 +98,8 @@ fn main() {
     let format = cli.format.unwrap_or(config.format);
 
     let result = match cli.command {
-        Commands::Event { r#type, tool, payload } => {
-            handle_event(r#type, tool, payload, &state_path, cli.signal, &format)
+        Commands::Event { r#type, tool, payload, session_id } => {
+            handle_event(r#type, tool, payload, session_id, &state_path, &config.sessions_dir, cli.signal, &format)
         }
         Commands::SyncUsage { log_path } => {
             handle_sync_usage(&log_path, &state_path, cli.signal)
@@ -126,7 +128,9 @@ fn handle_event(
     event_type: EventType,
     tool: Option<String>,
     _payload: Option<String>,
+    session_id: Option<String>,
     state_path: &PathBuf,
+    sessions_dir: &PathBuf,
     signal: u8,
     format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -173,6 +177,14 @@ fn handle_event(
 
     // Compute text from format string
     state.text = state.compute_text(format);
+
+    // Set session_id if provided
+    if let Some(sid) = session_id {
+        state.session_id = sid;
+    }
+
+    // Write to session-specific file
+    let _ = state.write_session_file(sessions_dir);
 
     state.write_atomic(state_path)?;
 

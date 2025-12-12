@@ -294,6 +294,58 @@ The bridge uses Nerd Font icons to represent different activities:
 
 Activities automatically reset to "Idle" after 60 seconds of inactivity. This prevents stale status when Claude Code sessions end unexpectedly.
 
+## Multi-Session Support
+
+Run multiple Claude Code sessions and see aggregated status:
+
+### Setup
+
+1. Start the aggregator daemon:
+```bash
+waybar-llm-bridge daemon --aggregate &
+```
+
+2. Update your Claude hooks to include session ID (automatic with `install-hooks.sh`).
+
+### Aggregate Display
+
+When multiple sessions are active:
+- **Text:** `2 󰔟 1 󰈔` (2 thinking, 1 reading)
+- **Tooltip:** Per-session breakdown with project paths
+- **Cost:** Sum of all session costs
+
+### Session Files
+
+Each session writes to:
+```
+/run/user/$UID/llm_sessions/{session_id}.json
+```
+
+Sessions are automatically cleaned up after 5 minutes of inactivity.
+
+## Demo
+
+Run the visual demo:
+
+```bash
+# Normal speed
+nix run .#demo
+
+# Slow for recording (2 sec between steps)
+nix run .#demo -- --pace 2
+
+# Interactive (press Enter for each step)
+nix run .#demo -- --interactive
+
+# Specific scenario
+nix run .#demo -- --scenario single-session
+nix run .#demo -- --scenario multi-session
+```
+
+Available scenarios:
+- **single-session**: Basic tool activity progression
+- **multi-session**: Aggregate view from multiple sessions
+
 ## Development
 
 ### Building

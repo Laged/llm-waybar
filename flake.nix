@@ -77,7 +77,13 @@
             program = toString (pkgs.writeShellScript "llm-waybar-demo" ''
               export PATH="${self.packages.${system}.waybar-llm-bridge}/bin:$PATH"
               export DEMO_BIN="${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge"
-              exec ${./demo/demo.sh} "$@"
+              # Copy demo scripts to temp directory to preserve relative paths
+              DEMO_TMP=$(mktemp -d)
+              trap "rm -rf $DEMO_TMP" EXIT
+              cp -r ${./demo}/* "$DEMO_TMP/"
+              chmod +x "$DEMO_TMP"/*.sh
+              chmod +x "$DEMO_TMP"/scenarios/*.sh
+              exec "$DEMO_TMP/demo.sh" "$@"
             '');
           };
         });

@@ -8,10 +8,13 @@ export CYAN='\033[0;36m'
 export YELLOW='\033[1;33m'
 export NC='\033[0m' # No Color
 
-# Paths
+# Paths - use isolated paths by default to avoid conflicts with active sessions
 export BIN="${DEMO_BIN:-./result/bin/waybar-llm-bridge}"
-export STATE_FILE="${LLM_BRIDGE_STATE_PATH:-/run/user/$(id -u)/llm_state.json}"
-export SESSIONS_DIR="${LLM_BRIDGE_SESSIONS_DIR:-/run/user/$(id -u)/llm_sessions}"
+# Set both the lib vars AND the env vars the binary reads
+export LLM_BRIDGE_STATE_PATH="${LLM_BRIDGE_STATE_PATH:-/tmp/llm_demo_state.json}"
+export LLM_BRIDGE_SESSIONS_DIR="${LLM_BRIDGE_SESSIONS_DIR:-/tmp/llm_demo_sessions}"
+export STATE_FILE="$LLM_BRIDGE_STATE_PATH"
+export SESSIONS_DIR="$LLM_BRIDGE_SESSIONS_DIR"
 
 # Run command and wait for waybar sync
 run_and_sync() {

@@ -466,38 +466,35 @@ fn handle_install_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>>
         for (event, hook_array) in our_hooks.as_object().unwrap() {
             let existing = hooks_obj.entry(event).or_insert(serde_json::json!([]));
             if let Some(existing_arr) = existing.as_array_mut() {
+                // Remove any existing waybar-llm-bridge hooks (to update with new path)
+                existing_arr.retain(|h| {
+                    !h.get("hooks")
+                        .and_then(|arr| arr.as_array())
+                        .map(|arr| arr.iter().any(|cmd| {
+                            cmd.get("command")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.contains("waybar-llm-bridge"))
+                                .unwrap_or(false)
+                        }))
+                        .unwrap_or(false)
+                });
+                // Add our new hooks
                 if let Some(new_hooks) = hook_array.as_array() {
                     for hook in new_hooks {
-                        // Check if this hook already exists (by command prefix)
-                        let already_exists = existing_arr.iter().any(|h| {
-                            h.get("hooks")
-                                .and_then(|arr| arr.as_array())
-                                .map(|arr| arr.iter().any(|cmd| {
-                                    cmd.get("command")
-                                        .and_then(|c| c.as_str())
-                                        .map(|s| s.contains("waybar-llm-bridge"))
-                                        .unwrap_or(false)
-                                }))
-                                .unwrap_or(false)
-                        });
-                        if !already_exists {
-                            existing_arr.push(hook.clone());
-                        }
+                        existing_arr.push(hook.clone());
                     }
                 }
             }
         }
     }
 
-    // Also add statusLine config
+    // Always update statusLine config (to handle path changes)
     let settings_obj = settings.as_object_mut().ok_or("Settings is not an object")?;
-    if !settings_obj.contains_key("statusLine") {
-        settings_obj.insert("statusLine".to_string(), serde_json::json!({
-            "type": "command",
-            "command": format!("{} statusline", bin_path),
-            "padding": 0
-        }));
-    }
+    settings_obj.insert("statusLine".to_string(), serde_json::json!({
+        "type": "command",
+        "command": format!("{} statusline", bin_path),
+        "padding": 0
+    }));
 
     let output = serde_json::to_string_pretty(&settings)?;
 

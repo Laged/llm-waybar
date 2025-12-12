@@ -1,16 +1,36 @@
 #!/usr/bin/env bash
 set -e
 
-BIN="./result/bin/waybar-llm-bridge"
+# Binary detection - try multiple locations
+if [[ -n "$DEMO_BIN" ]]; then
+    BIN="$DEMO_BIN"
+    echo "Using DEMO_BIN: $BIN"
+elif [[ -x "./result/bin/waybar-llm-bridge" ]]; then
+    BIN="./result/bin/waybar-llm-bridge"
+    echo "Using local build: $BIN"
+elif command -v waybar-llm-bridge &> /dev/null; then
+    BIN="waybar-llm-bridge"
+    echo "Using PATH binary: $BIN"
+else
+    echo "ERROR: waybar-llm-bridge not found!"
+    echo "Tried:"
+    echo "  1. DEMO_BIN environment variable"
+    echo "  2. ./result/bin/waybar-llm-bridge"
+    echo "  3. waybar-llm-bridge in PATH"
+    echo ""
+    echo "Run 'nix build' first or set DEMO_BIN."
+    exit 1
+fi
+
 STATE_FILE="${LLM_BRIDGE_STATE_PATH:-/run/user/$(id -u)/llm_state.json}"
 
 echo "=== waybar-llm-bridge Self-Test ==="
 echo "State file: $STATE_FILE"
 echo
 
-# Check binary exists
-if [[ ! -x "$BIN" ]]; then
-    echo "ERROR: Binary not found. Run 'nix build' first."
+# Check binary is executable
+if ! command -v "$BIN" &> /dev/null && [[ ! -x "$BIN" ]]; then
+    echo "ERROR: Binary '$BIN' is not executable."
     exit 1
 fi
 

@@ -6,6 +6,7 @@ pub struct Config {
     pub state_path: PathBuf,
     pub signal: u8,
     pub transcript_dir: PathBuf,
+    pub format: String,
 }
 
 impl Default for Config {
@@ -14,6 +15,7 @@ impl Default for Config {
             state_path: default_state_path(),
             signal: 8,
             transcript_dir: default_transcript_dir(),
+            format: "{activity} | ${cost:.2}".to_string(),
         }
     }
 }
@@ -31,6 +33,8 @@ impl Config {
             transcript_dir: env::var("LLM_BRIDGE_TRANSCRIPT_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| default_transcript_dir()),
+            format: env::var("LLM_BRIDGE_FORMAT")
+                .unwrap_or_else(|_| "{activity} | ${cost:.2}".to_string()),
         }
     }
 }

@@ -19,6 +19,9 @@ struct Cli {
     #[arg(long, env = "LLM_BRIDGE_SIGNAL", default_value = "8")]
     signal: u8,
 
+    #[arg(long, env = "LLM_BRIDGE_FORMAT")]
+    format: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -90,10 +93,11 @@ fn main() {
     let cli = Cli::parse();
     let config = Config::from_env();
     let state_path = cli.state_path.unwrap_or(config.state_path);
+    let format = cli.format.unwrap_or(config.format);
 
     let result = match cli.command {
         Commands::Event { r#type, tool, payload } => {
-            handle_event(r#type, tool, payload, &state_path, cli.signal)
+            handle_event(r#type, tool, payload, &state_path, cli.signal, &format)
         }
         Commands::SyncUsage { log_path } => {
             handle_sync_usage(&log_path, &state_path, cli.signal)
@@ -105,7 +109,7 @@ fn main() {
             handle_daemon(&log_path, &state_path, cli.signal)
         }
         Commands::Statusline => {
-            handle_statusline(&state_path, cli.signal)
+            handle_statusline(&state_path, cli.signal, &format)
         }
         Commands::InstallHooks { dry_run } => {
             handle_install_hooks(dry_run)
@@ -124,7 +128,12 @@ fn handle_event(
     _payload: Option<String>,
     state_path: &PathBuf,
     signal: u8,
+    format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Read existing state to preserve data from other sources (like statusline)
+    let mut state = WaybarState::read_from(state_path).unwrap_or_default();
+
+    // Determine the phase based on event type
     let phase = match event_type {
         EventType::Submit => AgentPhase::Thinking,
         EventType::ToolStart => AgentPhase::ToolUse {
@@ -134,7 +143,37 @@ fn handle_event(
         EventType::Stop => AgentPhase::Idle,
     };
 
-    let state = WaybarState::from_phase(&phase, None);
+    // Update only activity-related fields (activity, class, alt)
+    // Preserve tooltip which may contain usage/cost data from statusline
+    let (activity, class, alt) = match &phase {
+        AgentPhase::Idle => ("Idle".to_string(), "idle".to_string(), "idle".to_string()),
+        AgentPhase::Thinking => ("Thinking".to_string(), "thinking".to_string(), "active".to_string()),
+        AgentPhase::ToolUse { tool } => {
+            // Truncate very long tool names (>20 chars)
+            let truncated = if tool.len() > 20 {
+                format!("{}...", &tool[..17])
+            } else {
+                tool.clone()
+            };
+            (truncated, "tool-active".to_string(), "active".to_string())
+        },
+        AgentPhase::Error { message } => (format!("Error: {}", message), "error".to_string(), "error".to_string()),
+    };
+
+    state.activity = activity;
+    state.class = class;
+    state.alt = alt;
+    // Note: tooltip is preserved from previous state (may contain cost/usage data)
+
+    // Update last activity time (current Unix timestamp)
+    state.last_activity_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Compute text from format string
+    state.text = state.compute_text(format);
+
     state.write_atomic(state_path)?;
 
     let _ = signal_waybar(signal); // Ignore if waybar not running
@@ -218,6 +257,7 @@ fn handle_daemon(
 fn handle_statusline(
     state_path: &PathBuf,
     signal: u8,
+    format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let stdin = io::stdin();
 
@@ -246,7 +286,7 @@ fn handle_statusline(
         cost: None,
     });
 
-    // Build status line output
+    // Extract model name and cost from input
     let model_name = status_input
         .model
         .as_ref()
@@ -264,11 +304,43 @@ fn handle_statusline(
     let status_line = format!("{} | ${:.2}", model_name, cost);
     println!("{}", status_line);
 
-    // Also update waybar state file and signal
+    // Read existing state to preserve activity field
     let mut state = WaybarState::read_from(state_path).unwrap_or_default();
-    state.text = model_name.to_string();
-    state.tooltip = format!("Session cost: ${:.4}", cost);
-    state.class = "active".to_string();
+
+    // Update model and cost fields from statusline input
+    state.model = model_name.to_string();
+    state.cost = cost;
+
+    // Parse transcript for token usage if transcript_path is provided
+    if let Some(transcript_path) = status_input.transcript_path {
+        let transcript_pathbuf = PathBuf::from(transcript_path);
+        if transcript_pathbuf.exists() {
+            let provider = ClaudeProvider::new();
+            if let Ok(usage) = provider.parse_usage(&transcript_pathbuf) {
+                // Update token fields from parsed usage
+                state.input_tokens = usage.input_tokens;
+                state.output_tokens = usage.output_tokens;
+                state.cache_read = usage.cache_read;
+                state.cache_write = usage.cache_write;
+                // Note: cost from usage calculation may differ from Claude Code's reported cost
+                // We prefer Claude Code's cost if available, otherwise use calculated cost
+                if state.cost == 0.0 {
+                    state.cost = usage.estimated_cost;
+                }
+            }
+        }
+    }
+
+    // Preserve activity and class fields from existing state
+    // (These are set by event hooks and should not be overwritten)
+
+    // Compute text from format string
+    state.text = state.compute_text(format);
+
+    // Regenerate tooltip with all available information (including token breakdown)
+    state.tooltip = state.compute_tooltip();
+
+    // Write merged state and signal waybar
     state.write_atomic(state_path)?;
     let _ = signal_waybar(signal);
 

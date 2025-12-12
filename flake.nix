@@ -87,5 +87,30 @@
             '');
           };
         });
+
+      checks = forAllSystems (system:
+        let pkgs = mkPkgs system;
+        in {
+          cargo-test = pkgs.rustPlatform.buildRustPackage {
+            pname = "waybar-llm-bridge-test";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+            checkPhase = ''cargo test --release'';
+            installPhase = "touch $out";
+          };
+
+          integration-test = pkgs.runCommand "integration-test" {
+            buildInputs = [ self.packages.${system}.waybar-llm-bridge pkgs.jq pkgs.bash ];
+          } ''
+            export HOME=$(mktemp -d)
+            export XDG_RUNTIME_DIR=$(mktemp -d)
+            export LLM_BRIDGE_STATE_PATH="$XDG_RUNTIME_DIR/llm_state.json"
+            export LLM_BRIDGE_SESSIONS_DIR="$XDG_RUNTIME_DIR/llm_sessions"
+            export DEMO_BIN="${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge"
+            ${pkgs.bash}/bin/bash ${./test-hooks.sh}
+            touch $out
+          '';
+        });
     };
 }

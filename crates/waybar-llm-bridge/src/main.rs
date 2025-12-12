@@ -1,3 +1,5 @@
+mod aggregator;
+
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Deserialize;
 use std::io::{self, BufRead, IsTerminal};

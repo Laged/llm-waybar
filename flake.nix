@@ -62,12 +62,24 @@
           default = self.packages.${system}.waybar-llm-bridge;
         });
 
-      apps = forAllSystems (system: {
-        waybar-llm-bridge = {
-          type = "app";
-          program = "${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge";
-        };
-        default = self.apps.${system}.waybar-llm-bridge;
-      });
+      apps = forAllSystems (system:
+        let pkgs = mkPkgs system;
+        in {
+          waybar-llm-bridge = {
+            type = "app";
+            program = "${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge";
+          };
+          default = self.apps.${system}.waybar-llm-bridge;
+
+          # Demo runner
+          demo = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "llm-waybar-demo" ''
+              export PATH="${self.packages.${system}.waybar-llm-bridge}/bin:$PATH"
+              export DEMO_BIN="${self.packages.${system}.waybar-llm-bridge}/bin/waybar-llm-bridge"
+              exec ${./demo/demo.sh} "$@"
+            '');
+          };
+        });
     };
 }

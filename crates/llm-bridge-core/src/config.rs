@@ -7,6 +7,7 @@ pub struct Config {
     pub signal: u8,
     pub transcript_dir: PathBuf,
     pub format: String,
+    pub sessions_dir: PathBuf,
 }
 
 impl Default for Config {
@@ -16,6 +17,7 @@ impl Default for Config {
             signal: 8,
             transcript_dir: default_transcript_dir(),
             format: "{activity} | ${cost:.2}".to_string(),
+            sessions_dir: default_sessions_dir(),
         }
     }
 }
@@ -35,6 +37,9 @@ impl Config {
                 .unwrap_or_else(|_| default_transcript_dir()),
             format: env::var("LLM_BRIDGE_FORMAT")
                 .unwrap_or_else(|_| "{activity} | ${cost:.2}".to_string()),
+            sessions_dir: env::var("LLM_BRIDGE_SESSIONS_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| default_sessions_dir()),
         }
     }
 }
@@ -51,4 +56,12 @@ fn default_transcript_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".claude/projects")
+}
+
+fn default_sessions_dir() -> PathBuf {
+    if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+        PathBuf::from(runtime_dir).join("llm_sessions")
+    } else {
+        PathBuf::from("/tmp/llm_sessions")
+    }
 }

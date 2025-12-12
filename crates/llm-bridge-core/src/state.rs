@@ -237,6 +237,19 @@ impl WaybarState {
         Ok(())
     }
 
+    /// Write state to session-specific file in sessions directory
+    pub fn write_session_file(&self, sessions_dir: &Path) -> std::io::Result<()> {
+        if self.session_id.is_empty() {
+            return Ok(()); // No session ID, skip session file
+        }
+
+        // Ensure directory exists
+        fs::create_dir_all(sessions_dir)?;
+
+        let session_path = sessions_dir.join(format!("{}.json", self.session_id));
+        self.write_atomic(&session_path)
+    }
+
     pub fn read_from(path: &Path) -> std::io::Result<Self> {
         let content = fs::read_to_string(path)?;
         let mut state: Self = serde_json::from_str(&content)
@@ -549,5 +562,26 @@ mod tests {
         let state = WaybarState::default();
         assert_eq!(state.session_id, "");
         assert_eq!(state.cwd, "");
+    }
+
+    #[test]
+    fn test_write_session_file() {
+        let dir = std::env::temp_dir().join("llm_test_sessions");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut state = WaybarState::default();
+        state.session_id = "test123".to_string();
+        state.activity = "Thinking".to_string();
+
+        state.write_session_file(&dir).unwrap();
+
+        let session_file = dir.join("test123.json");
+        assert!(session_file.exists());
+
+        let content = std::fs::read_to_string(&session_file).unwrap();
+        assert!(content.contains("test123"));
+
+        // Cleanup
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

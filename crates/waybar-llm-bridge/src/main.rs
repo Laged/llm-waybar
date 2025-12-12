@@ -109,7 +109,7 @@ fn main() {
             handle_daemon(&log_path, &state_path, cli.signal)
         }
         Commands::Statusline => {
-            handle_statusline(&state_path, cli.signal, &format)
+            handle_statusline(&state_path, &config.sessions_dir, cli.signal, &format)
         }
         Commands::InstallHooks { dry_run } => {
             handle_install_hooks(dry_run)
@@ -256,6 +256,7 @@ fn handle_daemon(
 
 fn handle_statusline(
     state_path: &PathBuf,
+    sessions_dir: &PathBuf,
     signal: u8,
     format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -311,6 +312,14 @@ fn handle_statusline(
     state.model = model_name.to_string();
     state.cost = cost;
 
+    // Store session metadata
+    if let Some(ref sid) = status_input.session_id {
+        state.session_id = sid.clone();
+    }
+    if let Some(ref cwd) = status_input.cwd {
+        state.cwd = cwd.clone();
+    }
+
     // Parse transcript for token usage if transcript_path is provided
     if let Some(transcript_path) = status_input.transcript_path {
         let transcript_pathbuf = PathBuf::from(transcript_path);
@@ -339,6 +348,9 @@ fn handle_statusline(
 
     // Regenerate tooltip with all available information (including token breakdown)
     state.tooltip = state.compute_tooltip();
+
+    // Write to session-specific file (for multi-session aggregation)
+    let _ = state.write_session_file(sessions_dir);
 
     // Write merged state and signal waybar
     state.write_atomic(state_path)?;

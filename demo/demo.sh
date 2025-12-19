@@ -16,6 +16,10 @@ while [[ $# -gt 0 ]]; do
             export DEMO_INTERACTIVE=1
             shift
             ;;
+        --live)
+            export DEMO_LIVE=1
+            shift
+            ;;
         --scenario)
             SCENARIO="$2"
             shift 2
@@ -26,6 +30,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --pace SECONDS     Wait between steps (default: 0)"
             echo "  --interactive      Wait for Enter between steps"
+            echo "  --live             Use real waybar paths (updates your actual waybar)"
             echo "  --scenario NAME    Run specific scenario (single-session, multi-session)"
             echo
             echo "Scenarios:"

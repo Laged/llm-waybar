@@ -325,26 +325,34 @@ Sessions are automatically cleaned up after 5 minutes of inactivity.
 
 ## Demo
 
-Run the visual demo:
+Run the visual demo to see the bridge in action:
 
 ```bash
-# Normal speed
+# Terminal-only demo (isolated, doesn't affect your waybar)
 nix run .#demo
 
-# Slow for recording (2 sec between steps)
-nix run .#demo -- --pace 2
+# Live demo - updates your actual waybar!
+nix run .#demo -- --live --pace 2
 
-# Interactive (press Enter for each step)
-nix run .#demo -- --interactive
+# Interactive live demo (press Enter for each step)
+nix run .#demo -- --live --interactive
 
 # Specific scenario
-nix run .#demo -- --scenario single-session
-nix run .#demo -- --scenario multi-session
+nix run .#demo -- --live --pace 2 --scenario single-session
+nix run .#demo -- --live --pace 2 --scenario multi-session
 ```
 
-Available scenarios:
-- **single-session**: Basic tool activity progression
-- **multi-session**: Aggregate view from multiple sessions
+**Demo Options:**
+- `--live` - Update your real waybar (without this, uses isolated `/tmp/` paths)
+- `--pace N` - Wait N seconds between steps (good for watching waybar updates)
+- `--interactive` - Press Enter to advance each step
+- `--scenario NAME` - Run a specific scenario
+
+**Available Scenarios:**
+- **single-session**: Basic tool activity progression (Idle → Thinking → Read → Edit → Bash → Idle)
+- **multi-session**: Aggregated view from multiple sessions (shows `2 󰔟`, `1 󰔟 1 󰈔`, etc.)
+
+> **Note:** For best results with `--live`, run the demo from a terminal without an active Claude Code session, as competing sessions may briefly override the demo state.
 
 ## Development
 

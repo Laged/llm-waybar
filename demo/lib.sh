@@ -27,6 +27,13 @@ export SESSIONS_DIR="$LLM_BRIDGE_SESSIONS_DIR"
 # State to hold during pace (for --live mode)
 DEMO_HOLD_STATE=""
 
+# Signal waybar to refresh (handles NixOS .waybar-wrapped naming)
+signal_waybar() {
+    local waybar_pid
+    waybar_pid=$(pgrep -x .waybar-wrapped 2>/dev/null || pgrep -x waybar 2>/dev/null || true)
+    [[ -n "$waybar_pid" ]] && kill -RTMIN+8 $waybar_pid 2>/dev/null || true
+}
+
 # Run command and wait for waybar sync
 # Usage: run_and_sync "command" [expected_session_id]
 run_and_sync() {
@@ -48,8 +55,7 @@ run_and_sync() {
         echo "$DEMO_HOLD_STATE" > "$STATE_FILE"
     fi
 
-    # Signal waybar to refresh (RTMIN+8 = signal 8 in waybar config)
-    pkill -RTMIN+8 waybar 2>/dev/null || true
+    signal_waybar
     sleep 0.05  # Signal propagation
 }
 
@@ -115,11 +121,11 @@ pace() {
         if [[ "$DEMO_LIVE" == "1" && -n "$DEMO_HOLD_STATE" ]]; then
             # In live mode, continuously re-enforce state to override other sessions
             local i=0
-            local max_iter=$((DEMO_PACE * 5))  # ~5 iterations per second
+            local max_iter=$((DEMO_PACE * 20))  # ~20 iterations per second (more aggressive)
             while [[ $i -lt $max_iter ]]; do
-                sleep 0.2
+                sleep 0.05
                 echo "$DEMO_HOLD_STATE" > "$STATE_FILE"
-                pkill -RTMIN+8 waybar 2>/dev/null || true
+                signal_waybar
                 i=$((i + 1))  # Use $((i+1)) instead of ((i++)) to avoid set -e exit on 0
             done
         else
@@ -132,7 +138,7 @@ pace() {
                 while true; do
                     sleep 0.3
                     echo "$DEMO_HOLD_STATE" > "$STATE_FILE"
-                    pkill -RTMIN+8 waybar 2>/dev/null || true
+                    signal_waybar
                 done
             ) &
             local hold_pid=$!

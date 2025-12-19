@@ -3,9 +3,8 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
 
-# Parse arguments
+# Parse arguments BEFORE sourcing lib.sh (lib.sh uses DEMO_LIVE to set paths)
 while [[ $# -gt 0 ]]; do
     case $1 in
         --pace)
@@ -44,6 +43,9 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Source lib.sh AFTER parsing args so DEMO_LIVE is set for path configuration
+source "$SCRIPT_DIR/lib.sh"
 
 check_binary
 

@@ -70,6 +70,12 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Remove hooks from ~/.claude/settings.json
+    UninstallHooks {
+        /// Print what would be done without modifying the file
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -133,6 +139,9 @@ fn main() {
         }
         Commands::InstallHooks { dry_run } => {
             handle_install_hooks(dry_run)
+        }
+        Commands::UninstallHooks { dry_run } => {
+            handle_uninstall_hooks(dry_run)
         }
     };
 
@@ -507,6 +516,96 @@ fn handle_install_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>>
         }
         std::fs::write(&settings_path, output)?;
         println!("Hooks installed to {}", settings_path.display());
+    }
+
+    Ok(())
+}
+
+fn handle_uninstall_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let settings_path = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".claude/settings.json");
+
+    if !settings_path.exists() {
+        println!("No settings file found at {}", settings_path.display());
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&settings_path)?;
+    let mut settings: serde_json::Value = serde_json::from_str(&content)?;
+
+    let mut removed_hooks = false;
+    let mut removed_statusline = false;
+
+    // Remove waybar-llm-bridge hooks
+    if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+        for (_event, hook_array) in hooks.iter_mut() {
+            if let Some(arr) = hook_array.as_array_mut() {
+                let before = arr.len();
+                arr.retain(|h| {
+                    !h.get("hooks")
+                        .and_then(|arr| arr.as_array())
+                        .map(|arr| arr.iter().any(|cmd| {
+                            cmd.get("command")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.contains("waybar-llm-bridge"))
+                                .unwrap_or(false)
+                        }))
+                        .unwrap_or(false)
+                });
+                if arr.len() < before {
+                    removed_hooks = true;
+                }
+            }
+        }
+
+        // Clean up empty hook arrays
+        hooks.retain(|_, v| {
+            v.as_array().map(|a| !a.is_empty()).unwrap_or(true)
+        });
+    }
+
+    // Remove empty hooks object
+    if settings.get("hooks").and_then(|h| h.as_object()).map(|h| h.is_empty()).unwrap_or(false) {
+        settings.as_object_mut().unwrap().remove("hooks");
+    }
+
+    // Remove statusLine if it's ours
+    if let Some(status_line) = settings.get("statusLine") {
+        if status_line.get("command")
+            .and_then(|c| c.as_str())
+            .map(|s| s.contains("waybar-llm-bridge"))
+            .unwrap_or(false)
+        {
+            settings.as_object_mut().unwrap().remove("statusLine");
+            removed_statusline = true;
+        }
+    }
+
+    if !removed_hooks && !removed_statusline {
+        println!("No waybar-llm-bridge hooks found in {}", settings_path.display());
+        return Ok(());
+    }
+
+    let output = serde_json::to_string_pretty(&settings)?;
+
+    if dry_run {
+        println!("Would write to {}:\n{}", settings_path.display(), output);
+        if removed_hooks {
+            println!("\nWould remove: hooks");
+        }
+        if removed_statusline {
+            println!("Would remove: statusLine");
+        }
+    } else {
+        std::fs::write(&settings_path, output)?;
+        println!("Removed waybar-llm-bridge from {}", settings_path.display());
+        if removed_hooks {
+            println!("  - Removed hooks");
+        }
+        if removed_statusline {
+            println!("  - Removed statusLine");
+        }
     }
 
     Ok(())

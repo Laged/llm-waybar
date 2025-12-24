@@ -335,9 +335,9 @@ fn handle_statusline(
     signal: u8,
     format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env();
     let stdin = io::stdin();
 
-    // Check if stdin is a TTY (no piped input)
     if stdin.is_terminal() {
         eprintln!("Error: statusline expects JSON input piped from Claude Code's statusLine hook.");
         eprintln!("This command is not meant to be run directly.");
@@ -347,13 +347,13 @@ fn handle_statusline(
         return Err("No input provided".into());
     }
 
-    // Read JSON from stdin (Claude Code pipes this)
+    // Read JSON from stdin
     let mut input = String::new();
     for line in stdin.lock().lines() {
         input.push_str(&line?);
     }
 
-    // Parse the statusline input
+    // Parse just enough to output status line quickly
     let status_input: StatuslineInput = serde_json::from_str(&input).unwrap_or(StatuslineInput {
         session_id: None,
         transcript_path: None,
@@ -363,7 +363,6 @@ fn handle_statusline(
         context_window: None,
     });
 
-    // Extract model name and cost from input
     let model_name = status_input
         .model
         .as_ref()
@@ -377,18 +376,20 @@ fn handle_statusline(
         .and_then(|c| c.total_cost_usd)
         .unwrap_or(0.0);
 
-    // Output a single status line (for Claude Code's statusLine display)
-    let status_line = format!("{} | ${:.2}", model_name, cost);
-    println!("{}", status_line);
+    // Output status line immediately (Claude is waiting for this)
+    println!("{} | ${:.2}", model_name, cost);
 
-    // Read existing state to preserve activity field
+    // Try to send to daemon for async state update
+    let message = DaemonMessage::Status { payload: input.clone() };
+    if send_to_daemon(&config.socket_path, &message).unwrap_or(false) {
+        return Ok(());
+    }
+
+    // Fallback: direct mode
     let mut state = WaybarState::read_from(state_path).unwrap_or_default();
-
-    // Update model and cost fields from statusline input
     state.model = model_name.to_string();
     state.cost = cost;
 
-    // Store session metadata
     if let Some(ref sid) = status_input.session_id {
         state.session_id = sid.clone();
     }
@@ -396,8 +397,7 @@ fn handle_statusline(
         state.cwd = cwd.clone();
     }
 
-    // Extract token usage from context_window (new Claude statusline format)
-    // This is much faster than parsing transcript.jsonl
+    // Extract tokens from context_window
     if let Some(ref cw) = status_input.context_window {
         if let Some(ref usage) = cw.current_usage {
             state.input_tokens = usage.input_tokens.unwrap_or(0);
@@ -407,7 +407,7 @@ fn handle_statusline(
         }
     }
 
-    // Fallback: parse transcript only if context_window not available
+    // Fallback transcript parsing
     if state.input_tokens == 0 && state.output_tokens == 0 {
         if let Some(transcript_path) = status_input.transcript_path.as_ref() {
             let transcript_pathbuf = PathBuf::from(transcript_path);
@@ -426,19 +426,9 @@ fn handle_statusline(
         }
     }
 
-    // Preserve activity and class fields from existing state
-    // (These are set by event hooks and should not be overwritten)
-
-    // Compute text from format string
     state.text = state.compute_text(format);
-
-    // Regenerate tooltip with all available information (including token breakdown)
     state.tooltip = state.compute_tooltip();
-
-    // Write to session-specific file (for multi-session aggregation)
     let _ = state.write_session_file(sessions_dir);
-
-    // Write merged state and signal waybar
     state.write_atomic(state_path)?;
     let _ = signal_waybar(signal);
 

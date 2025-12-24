@@ -283,4 +283,45 @@ impl Daemon {
 
         Ok(socket)
     }
+
+    /// Main daemon loop
+    pub fn run(&mut self) -> std::io::Result<()> {
+        let socket = self.bind_socket()?;
+
+        eprintln!("llm-bridge daemon listening on {:?}", self.socket_path);
+
+        let mut buf = [0u8; 65536];
+
+        loop {
+            // Try to receive a message (non-blocking)
+            match socket.recv(&mut buf) {
+                Ok(n) => {
+                    if let Ok(s) = std::str::from_utf8(&buf[..n]) {
+                        if let Some(msg) = DaemonMessage::decode(s) {
+                            self.handle_message(msg);
+                        }
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // No message available, that's fine
+                }
+                Err(e) => {
+                    eprintln!("Socket error: {}", e);
+                }
+            }
+
+            // Check debounce timer and signal if ready
+            if self.should_signal() {
+                self.do_signal();
+            }
+
+            // Check disk flush timer
+            if self.should_flush() {
+                self.do_flush();
+            }
+
+            // Small sleep to prevent busy-waiting
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
 }

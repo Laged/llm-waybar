@@ -95,6 +95,7 @@ struct StatuslineInput {
     cwd: Option<String>,
     model: Option<ModelInfo>,
     cost: Option<CostInfo>,
+    context_window: Option<ContextWindow>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,6 +107,19 @@ struct ModelInfo {
 #[derive(Debug, Deserialize)]
 struct CostInfo {
     total_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContextWindow {
+    current_usage: Option<CurrentUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentUsage {
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
 }
 
 fn main() {
@@ -324,6 +338,7 @@ fn handle_statusline(
         cwd: None,
         model: None,
         cost: None,
+        context_window: None,
     });
 
     // Extract model name and cost from input

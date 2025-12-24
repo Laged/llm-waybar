@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::io::{self, BufRead, IsTerminal};
 use std::path::PathBuf;
 use llm_bridge_core::{Config, WaybarState, AgentPhase, signal::signal_waybar};
+use llm_bridge_core::socket::{DaemonMessage, send_to_daemon};
 use llm_bridge_claude::ClaudeProvider;
 use llm_bridge_core::LlmProvider;
 use notify::{Watcher, RecursiveMode, Event, EventKind};
@@ -175,6 +176,27 @@ fn handle_event(
     signal: u8,
     format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env();
+
+    // Try daemon first (fire-and-forget, <1ms)
+    let event_str = match event_type {
+        EventType::Submit => "submit",
+        EventType::ToolStart => "tool-start",
+        EventType::ToolEnd => "tool-end",
+        EventType::Stop => "stop",
+    };
+
+    let message = DaemonMessage::Event {
+        event_type: event_str.to_string(),
+        tool: tool.clone(),
+    };
+
+    if send_to_daemon(&config.socket_path, &message).unwrap_or(false) {
+        // Daemon handled it, we're done
+        return Ok(());
+    }
+
+    // Fallback: direct mode (daemon not running)
     // Read existing state to preserve data from other sources (like statusline)
     let mut state = WaybarState::read_from(state_path).unwrap_or_default();
 

@@ -374,21 +374,31 @@ fn handle_statusline(
         state.cwd = cwd.clone();
     }
 
-    // Parse transcript for token usage if transcript_path is provided
-    if let Some(transcript_path) = status_input.transcript_path {
-        let transcript_pathbuf = PathBuf::from(transcript_path);
-        if transcript_pathbuf.exists() {
-            let provider = ClaudeProvider::new();
-            if let Ok(usage) = provider.parse_usage(&transcript_pathbuf) {
-                // Update token fields from parsed usage
-                state.input_tokens = usage.input_tokens;
-                state.output_tokens = usage.output_tokens;
-                state.cache_read = usage.cache_read;
-                state.cache_write = usage.cache_write;
-                // Note: cost from usage calculation may differ from Claude Code's reported cost
-                // We prefer Claude Code's cost if available, otherwise use calculated cost
-                if state.cost == 0.0 {
-                    state.cost = usage.estimated_cost;
+    // Extract token usage from context_window (new Claude statusline format)
+    // This is much faster than parsing transcript.jsonl
+    if let Some(ref cw) = status_input.context_window {
+        if let Some(ref usage) = cw.current_usage {
+            state.input_tokens = usage.input_tokens.unwrap_or(0);
+            state.output_tokens = usage.output_tokens.unwrap_or(0);
+            state.cache_read = usage.cache_read_input_tokens.unwrap_or(0);
+            state.cache_write = usage.cache_creation_input_tokens.unwrap_or(0);
+        }
+    }
+
+    // Fallback: parse transcript only if context_window not available
+    if state.input_tokens == 0 && state.output_tokens == 0 {
+        if let Some(transcript_path) = status_input.transcript_path.as_ref() {
+            let transcript_pathbuf = PathBuf::from(transcript_path);
+            if transcript_pathbuf.exists() {
+                let provider = ClaudeProvider::new();
+                if let Ok(usage) = provider.parse_usage(&transcript_pathbuf) {
+                    state.input_tokens = usage.input_tokens;
+                    state.output_tokens = usage.output_tokens;
+                    state.cache_read = usage.cache_read;
+                    state.cache_write = usage.cache_write;
+                    if state.cost == 0.0 {
+                        state.cost = usage.estimated_cost;
+                    }
                 }
             }
         }

@@ -1,4 +1,5 @@
 mod aggregator;
+mod daemon;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Deserialize;

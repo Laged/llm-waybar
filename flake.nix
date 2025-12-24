@@ -54,6 +54,7 @@
             postInstall = ''
               wrapProgram $out/bin/waybar-llm-bridge \
                 --run 'export LLM_BRIDGE_STATE_PATH=''${LLM_BRIDGE_STATE_PATH:-"/run/user/$(id -u)/llm_state.json"}' \
+                --run 'export LLM_BRIDGE_SOCKET_PATH=''${LLM_BRIDGE_SOCKET_PATH:-"/run/user/$(id -u)/llm-bridge.sock"}' \
                 --run 'export LLM_BRIDGE_SIGNAL=''${LLM_BRIDGE_SIGNAL:-"8"}' \
                 --run 'export LLM_BRIDGE_TRANSCRIPT_DIR=''${LLM_BRIDGE_TRANSCRIPT_DIR:-"$HOME/.claude/projects"}'
             '';
@@ -112,5 +113,38 @@
             touch $out
           '';
         });
+
+      homeManagerModules.default = { config, lib, pkgs, ... }:
+        let
+          cfg = config.services.llm-bridge;
+        in {
+          options.services.llm-bridge = {
+            enable = lib.mkEnableOption "LLM Waybar Bridge daemon";
+
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.waybar-llm-bridge;
+              description = "The waybar-llm-bridge package to use";
+            };
+          };
+
+          config = lib.mkIf cfg.enable {
+            systemd.user.services.llm-bridge = {
+              Unit = {
+                Description = "LLM Waybar Bridge Daemon";
+                After = [ "graphical-session.target" ];
+                PartOf = [ "graphical-session.target" ];
+              };
+              Service = {
+                ExecStart = "${cfg.package}/bin/waybar-llm-bridge daemon";
+                Restart = "on-failure";
+                RestartSec = 1;
+              };
+              Install.WantedBy = [ "graphical-session.target" ];
+            };
+
+            home.packages = [ cfg.package ];
+          };
+        };
     };
 }

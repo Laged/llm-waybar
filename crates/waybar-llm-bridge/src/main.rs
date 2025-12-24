@@ -50,19 +50,23 @@ enum Commands {
     },
     /// Output current state as Waybar JSON
     Status,
-    /// Watch transcript and auto-update (daemon mode)
+    /// Run as background daemon (new high-performance mode)
     Daemon {
-        /// Watch transcript file for changes
+        /// Watch transcript file for changes (legacy mode)
         #[arg(long)]
         log_path: Option<PathBuf>,
 
-        /// Aggregate mode: watch sessions directory instead
+        /// Aggregate mode: watch sessions directory (legacy mode)
         #[arg(long)]
         aggregate: bool,
 
         /// Sessions directory (for aggregate mode)
         #[arg(long)]
         sessions_dir: Option<PathBuf>,
+
+        /// Run new socket-based daemon (default if no other flags)
+        #[arg(long)]
+        socket: bool,
     },
     /// Claude Code statusLine mode - reads JSON from stdin, outputs status line
     Statusline,
@@ -140,14 +144,17 @@ fn main() {
         Commands::Status => {
             handle_status(&state_path)
         }
-        Commands::Daemon { log_path, aggregate, sessions_dir } => {
-            if aggregate {
+        Commands::Daemon { log_path, aggregate, sessions_dir, socket } => {
+            // New socket daemon mode (default when no legacy flags)
+            if socket || (log_path.is_none() && !aggregate) {
+                handle_daemon_socket(&state_path, &config.sessions_dir, cli.signal, &format)
+            } else if aggregate {
                 let sessions = sessions_dir.unwrap_or(config.sessions_dir);
                 handle_daemon_aggregate(&sessions, &state_path, cli.signal)
             } else if let Some(log) = log_path {
                 handle_daemon(&log, &state_path, cli.signal)
             } else {
-                Err("Either --log-path or --aggregate is required".into())
+                Err("Either --log-path, --aggregate, or --socket is required".into())
             }
         }
         Commands::Statusline => {
@@ -450,6 +457,28 @@ fn handle_daemon_aggregate(
     );
 
     aggregator.watch()
+}
+
+fn handle_daemon_socket(
+    state_path: &PathBuf,
+    sessions_dir: &PathBuf,
+    signal: u8,
+    format: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use daemon::Daemon;
+
+    let config = Config::from_env();
+
+    let mut daemon = Daemon::new(
+        config.socket_path,
+        state_path.clone(),
+        sessions_dir.clone(),
+        signal,
+        format.to_string(),
+    );
+
+    daemon.run()?;
+    Ok(())
 }
 
 fn handle_install_hooks(dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {

@@ -198,4 +198,39 @@ fi
 unset LLM_BRIDGE_FORMAT
 echo
 
+echo "--- Test 6: Daemon mode ---"
+
+# Start daemon in background
+DAEMON_STATE="/tmp/daemon_test_$$.json"
+DAEMON_SOCKET="/tmp/daemon_test_$$.sock"
+rm -f "$DAEMON_STATE" "$DAEMON_SOCKET"
+
+LLM_BRIDGE_STATE_PATH="$DAEMON_STATE" \
+LLM_BRIDGE_SOCKET_PATH="$DAEMON_SOCKET" \
+$BIN daemon &
+DAEMON_PID=$!
+sleep 0.5  # Give daemon time to start
+
+# Send events via socket
+LLM_BRIDGE_SOCKET_PATH="$DAEMON_SOCKET" \
+LLM_BRIDGE_STATE_PATH="$DAEMON_STATE" \
+$BIN event --type submit
+
+sleep 0.2  # Let daemon process
+
+# Check state was updated
+ACTIVITY=$(cat "$DAEMON_STATE" | jq -r '.activity')
+if [ "$ACTIVITY" = "Thinking" ]; then
+    echo "✓ PASS: Daemon processed event correctly"
+else
+    echo "✗ FAIL: Expected activity 'Thinking', got '$ACTIVITY'"
+    kill $DAEMON_PID 2>/dev/null
+    exit 1
+fi
+
+# Cleanup
+kill $DAEMON_PID 2>/dev/null
+rm -f "$DAEMON_STATE" "$DAEMON_SOCKET"
+echo
+
 echo "=== All Integration Tests Complete ==="

@@ -659,6 +659,7 @@ dependencies = [
  "dirs",
  "llm-bridge-claude",
  "llm-bridge-core",
+ "nix",
  "notify",
  "serde",
  "serde_json",

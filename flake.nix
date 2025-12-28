@@ -53,8 +53,8 @@
 
             postInstall = ''
               wrapProgram $out/bin/waybar-llm-bridge \
-                --run 'export LLM_BRIDGE_STATE_PATH=''${LLM_BRIDGE_STATE_PATH:-"/run/user/$(id -u)/llm_state.json"}' \
-                --run 'export LLM_BRIDGE_SOCKET_PATH=''${LLM_BRIDGE_SOCKET_PATH:-"/run/user/$(id -u)/llm-bridge.sock"}' \
+                --run 'export LLM_BRIDGE_STATE_PATH=''${LLM_BRIDGE_STATE_PATH:-"''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/llm_state.json"}' \
+                --run 'export LLM_BRIDGE_SOCKET_PATH=''${LLM_BRIDGE_SOCKET_PATH:-"''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/llm-bridge.sock"}' \
                 --run 'export LLM_BRIDGE_SIGNAL=''${LLM_BRIDGE_SIGNAL:-"8"}' \
                 --run 'export LLM_BRIDGE_TRANSCRIPT_DIR=''${LLM_BRIDGE_TRANSCRIPT_DIR:-"$HOME/.claude/projects"}'
             '';
